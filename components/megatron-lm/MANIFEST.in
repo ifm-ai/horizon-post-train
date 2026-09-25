@@ -1,0 +1,3 @@
+include LICENSE
+include megatron/core/requirements.txt
+include megatron/core/package_info.py

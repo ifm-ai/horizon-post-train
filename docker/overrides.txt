@@ -1,0 +1,3 @@
+# Preserve the reference environment's cuDNN override for PyTorch 2.9.1.
+# See https://github.com/pytorch/pytorch/issues/168167.
+nvidia-cudnn-cu12==9.16.0.29

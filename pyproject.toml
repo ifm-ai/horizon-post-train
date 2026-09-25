@@ -1,0 +1,28 @@
+# Modified for the RL360 source snapshot: omit excluded documentation and development targets.
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "RL360"
+version = "0.1.0"
+description = "RL360: Reinforcement Learning Framework"
+readme = "README.md"
+requires-python = ">=3.12"
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "hydra-core",
+    # Reward-function and data-processing dependencies
+    "langdetect",
+    "immutabledict",
+    "nltk",
+    "polars",
+    "nvitop",  # Moved from extras['gpu'] for convenience, or could be optional
+]
+
+[project.license]
+file = "LICENSE"
+[tool.setuptools.packages.find]
+where = ["src"]

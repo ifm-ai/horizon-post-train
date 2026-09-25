@@ -1,0 +1,320 @@
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
+
+use parking_lot::Mutex;
+use tokio::{sync::Notify, time::error::Elapsed};
+use tracing::{debug, trace};
+
+/// Token bucket for rate limiting.
+///
+/// This implementation provides:
+/// - Smooth rate limiting with configurable refill rate
+/// - Burst capacity handling
+/// - Fair queuing for waiting requests via Notify
+/// - Sync token return for Drop handlers (via `return_tokens_sync`)
+///
+/// Uses `parking_lot::Mutex` for sync-compatible locking (no async required).
+#[derive(Clone)]
+pub struct TokenBucket {
+    inner: Arc<Mutex<TokenBucketInner>>,
+    notify: Arc<Notify>,
+    capacity: f64,
+    refill_rate: f64, // tokens per second
+}
+
+struct TokenBucketInner {
+    tokens: f64,
+    last_refill: Instant,
+}
+
+impl TokenBucket {
+    /// Create a new token bucket
+    ///
+    /// # Arguments
+    /// * `capacity` - Maximum number of tokens (burst capacity)
+    /// * `refill_rate` - Tokens added per second (0 for pure concurrency limiting)
+    pub fn new(capacity: usize, refill_rate: usize) -> Self {
+        let capacity = capacity as f64;
+        // Allow refill_rate=0 for pure concurrency limiting (semaphore behavior)
+        // When refill_rate=0, tokens are only returned via return_tokens()
+        let refill_rate = refill_rate as f64;
+
+        Self {
+            inner: Arc::new(Mutex::new(TokenBucketInner {
+                tokens: capacity,
+                last_refill: Instant::now(),
+            })),
+            notify: Arc::new(Notify::new()),
+            capacity,
+            refill_rate,
+        }
+    }
+
+    /// Try to acquire tokens immediately.
+    ///
+    /// Returns `Ok(())` if tokens were acquired, `Err(())` if insufficient tokens.
+    #[expect(
+        clippy::result_unit_err,
+        reason = "Try-acquire pattern: callers only need success/failure, a custom error type adds no information"
+    )]
+    pub fn try_acquire(&self, tokens: f64) -> Result<(), ()> {
+        self.try_acquire_sync(tokens)
+    }
+
+    /// Sync version of try_acquire (for internal use).
+    fn try_acquire_sync(&self, tokens: f64) -> Result<(), ()> {
+        debug_assert!(
+            tokens.is_finite() && tokens >= 0.0,
+            "token amount must be non-negative and finite, got {tokens}"
+        );
+        let mut inner = self.inner.lock();
+
+        let now = Instant::now();
+        let elapsed = now.duration_since(inner.last_refill).as_secs_f64();
+        let refill_amount = elapsed * self.refill_rate;
+
+        inner.tokens = (inner.tokens + refill_amount).min(self.capacity);
+        inner.last_refill = now;
+
+        trace!(
+            "Token bucket: {} tokens available, requesting {}",
+            inner.tokens,
+            tokens
+        );
+
+        if inner.tokens >= tokens {
+            inner.tokens -= tokens;
+            debug!(
+                "Token bucket: acquired {} tokens, {} remaining",
+                tokens, inner.tokens
+            );
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    /// Acquire tokens, waiting if necessary.
+    ///
+    /// When `refill_rate=0`, waits indefinitely for tokens to be returned via `return_tokens()`.
+    /// Use `acquire_timeout()` to set an appropriate timeout.
+    pub async fn acquire(&self, tokens: f64) -> Result<(), Elapsed> {
+        if self.try_acquire(tokens).is_ok() {
+            return Ok(());
+        }
+
+        // When refill_rate=0 (pure concurrency limiting), tokens only come back
+        // via return_tokens(), so we wait on notify signal only.
+        if self.refill_rate == 0.0 {
+            debug!(
+                "Token bucket: waiting indefinitely for {} tokens (refill_rate=0)",
+                tokens
+            );
+
+            loop {
+                self.notify.notified().await;
+
+                if self.try_acquire(tokens).is_ok() {
+                    return Ok(());
+                }
+            }
+        }
+
+        let wait_time = {
+            let inner = self.inner.lock();
+            let tokens_needed = tokens - inner.tokens;
+            let wait_secs = (tokens_needed / self.refill_rate).max(0.0);
+            Duration::from_secs_f64(wait_secs)
+        };
+
+        debug!(
+            "Token bucket: waiting {:?} for {} tokens",
+            wait_time, tokens
+        );
+
+        tokio::time::timeout(wait_time, async {
+            loop {
+                if self.try_acquire(tokens).is_ok() {
+                    return;
+                }
+                tokio::select! {
+                    () = self.notify.notified() => {},
+                    () = tokio::time::sleep(Duration::from_millis(10)) => {},
+                }
+            }
+        })
+        .await?;
+
+        Ok(())
+    }
+
+    /// Acquire tokens with custom timeout.
+    pub async fn acquire_timeout(&self, tokens: f64, timeout: Duration) -> Result<(), Elapsed> {
+        tokio::time::timeout(timeout, self.acquire(tokens)).await?
+    }
+
+    /// Return tokens to the bucket (sync version).
+    ///
+    /// This is safe to call from sync contexts (e.g., Drop handlers).
+    /// Uses `parking_lot::Mutex` which never blocks indefinitely.
+    pub fn return_tokens_sync(&self, tokens: f64) {
+        debug_assert!(
+            tokens.is_finite() && tokens >= 0.0,
+            "token amount must be non-negative and finite, got {tokens}"
+        );
+        {
+            let mut inner = self.inner.lock();
+            inner.tokens = (inner.tokens + tokens).min(self.capacity);
+            debug!(
+                "Token bucket: returned {} tokens, {} available",
+                tokens, inner.tokens
+            );
+        } // Release lock before notify
+        self.notify.notify_waiters();
+    }
+
+    /// Return tokens to the bucket.
+    pub fn return_tokens(&self, tokens: f64) {
+        self.return_tokens_sync(tokens);
+    }
+
+    /// Get current available tokens (for monitoring).
+    pub fn available_tokens(&self) -> f64 {
+        let mut inner = self.inner.lock();
+
+        let now = Instant::now();
+        let elapsed = now.duration_since(inner.last_refill).as_secs_f64();
+        let refill_amount = elapsed * self.refill_rate;
+
+        inner.tokens = (inner.tokens + refill_amount).min(self.capacity);
+        inner.last_refill = now;
+
+        inner.tokens
+    }
+
+    /// Estimate the whole seconds until `tokens` can be acquired. This is
+    /// intended for HTTP `Retry-After`, so any positive deficit rounds up to
+    /// at least one second. A zero-refill concurrency bucket has no computed
+    /// release time; use one second as a bounded hint rather than omitting the
+    /// header entirely.
+    pub fn retry_after_secs(&self, tokens: f64) -> u64 {
+        let available = self.available_tokens();
+        let deficit = (tokens - available).max(0.0);
+        if deficit == 0.0 {
+            return 0;
+        }
+        if self.refill_rate <= 0.0 {
+            return 1;
+        }
+        (deficit / self.refill_rate).ceil().max(1.0) as u64
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_token_bucket_basic() {
+        let bucket = TokenBucket::new(10, 5);
+
+        assert!(bucket.try_acquire(5.0).is_ok());
+        assert!(bucket.try_acquire(5.0).is_ok());
+
+        assert!(bucket.try_acquire(1.0).is_err());
+
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        assert!(bucket.try_acquire(1.0).is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_token_bucket_refill() {
+        let bucket = TokenBucket::new(10, 10);
+
+        assert!(bucket.try_acquire(10.0).is_ok());
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        let available = bucket.available_tokens();
+        assert!((4.0..=6.0).contains(&available));
+    }
+
+    #[tokio::test]
+    async fn test_token_bucket_zero_refill_rate() {
+        // With refill_rate=0, tokens should only come back via return_tokens()
+        let bucket = TokenBucket::new(2, 0);
+
+        // Acquire both tokens
+        assert!(bucket.try_acquire(1.0).is_ok());
+        assert!(bucket.try_acquire(1.0).is_ok());
+
+        // No more tokens available
+        assert!(bucket.try_acquire(1.0).is_err());
+
+        // refill_rate=0 should NOT refill automatically even after waiting
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert!(bucket.try_acquire(1.0).is_err());
+
+        bucket.return_tokens(1.0);
+        assert!(bucket.try_acquire(1.0).is_ok());
+
+        // No more tokens again
+        assert!(bucket.try_acquire(1.0).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_token_bucket_zero_refill_with_notify() {
+        // Test that acquire wakes up when tokens are returned
+        let bucket = Arc::new(TokenBucket::new(1, 0));
+
+        // Acquire the only token
+        assert!(bucket.try_acquire(1.0).is_ok());
+
+        let bucket_clone = bucket.clone();
+
+        // Spawn a task that will return the token after a delay
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "Test helper: short-lived task that completes before test ends"
+        )]
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            bucket_clone.return_tokens(1.0);
+        });
+
+        // This should wait and then succeed when token is returned
+        let result = bucket.acquire_timeout(1.0, Duration::from_secs(1)).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_return_tokens_sync() {
+        // Test that sync return works correctly
+        let bucket = TokenBucket::new(2, 0);
+
+        assert!(bucket.try_acquire(1.0).is_ok());
+        assert!(bucket.try_acquire(1.0).is_ok());
+        assert!(bucket.try_acquire(1.0).is_err());
+
+        // Use sync return
+        bucket.return_tokens_sync(1.0);
+        assert!(bucket.try_acquire(1.0).is_ok());
+    }
+
+    #[test]
+    fn test_retry_after_rounds_positive_deficit_up() {
+        let bucket = TokenBucket::new(2, 2);
+        bucket.try_acquire(2.0).unwrap();
+        assert_eq!(bucket.retry_after_secs(1.0), 1);
+    }
+
+    #[test]
+    fn test_retry_after_for_zero_refill_bucket_is_bounded() {
+        let bucket = TokenBucket::new(1, 0);
+        bucket.try_acquire(1.0).unwrap();
+        assert_eq!(bucket.retry_after_secs(1.0), 1);
+    }
+}

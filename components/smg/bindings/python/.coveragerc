@@ -1,0 +1,8 @@
+[run]
+source = smg
+omit =
+    */cli.py
+    */__main__.py
+
+[report]
+fail_under = 80

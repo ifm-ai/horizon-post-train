@@ -1,0 +1,180 @@
+syntax = "proto3";
+
+package mesh.gossip;
+
+service Gossip {
+  rpc PingServer(GossipMessage) returns (NodeUpdate);
+  // Bidirectional streaming for state synchronization
+  rpc SyncStream(stream StreamMessage) returns (stream StreamMessage);
+}
+
+enum NodeStatus {
+  INIT = 0;
+  ALIVE = 1;
+  SUSPECTED = 2;
+  DOWN = 3;
+  LEAVING = 4;
+}
+
+message NodeState {
+  string name = 1;
+  string address = 2;
+  NodeStatus status = 3;
+  uint64 version = 4;
+  map<string, bytes> metadata = 5;
+}
+
+
+message StateSync {
+  repeated NodeState nodes = 1;
+}
+
+message Ping {
+  StateSync state_sync = 1;
+}
+
+message PingReq {
+  NodeState node = 1;
+}
+
+message Ack {
+  uint64 timestamp = 1;
+}
+
+message NodeUpdate {
+  string name = 1;
+  string address = 2;
+  NodeStatus status = 3;
+}
+
+message GossipMessage {
+  oneof payload {
+    Ping ping = 1;
+    PingReq ping_req = 2;
+  }
+}
+
+// Stream message types for bidirectional streaming
+enum StreamMessageType {
+  INCREMENTAL_UPDATE = 0;
+  SNAPSHOT_REQUEST = 1;
+  SNAPSHOT_CHUNK = 2;
+  SNAPSHOT_COMPLETE = 3;
+  ACK = 4;
+  NACK = 5;
+  HEARTBEAT = 6;
+  STREAM_BATCH = 7;
+  CRDT_BATCH = 8;
+  CRDT_ACK = 9;
+}
+
+message StreamMessage {
+  StreamMessageType message_type = 1;
+  oneof payload {
+    IncrementalUpdate incremental = 2;
+    SnapshotRequest snapshot_request = 3;
+    SnapshotChunk snapshot_chunk = 4;
+    StreamAck ack = 5;
+    StreamBatch stream_batch = 8;
+    CrdtBatch crdt_batch = 9;
+    CrdtAck crdt_ack = 10;
+  }
+  uint64 sequence = 6; // Sequence number for ordering
+  string peer_id = 7;   // Sender peer ID
+}
+
+// One CRDT operation, mirroring the in-crate Operation enum. `tombstone`
+// distinguishes a Remove (true, `value` empty) from an Insert (false). The
+// (timestamp, replica_id) pair is the Lamport op-id used for dedup/merge.
+message CrdtOp {
+  string key = 1;
+  bytes value = 2;
+  bool tombstone = 3;
+  uint64 timestamp = 4;
+  string replica_id = 5; // ReplicaId UUID, text form (ReplicaId::from_string)
+}
+
+// A batch of CRDT operations delivered in a single gossip round. The receiver
+// reconstructs an OperationLog and merges it into its CrdtOrMap; merge is
+// idempotent by op-id, so re-sending already-seen ops is a no-op.
+message CrdtBatch {
+  repeated CrdtOp ops = 1;
+}
+
+// One key's acknowledged version on a peer. The receiver of a CrdtBatch sends
+// these back so the sender can advance its per-(peer, key) send watermark and
+// stop re-broadcasting keys the peer already has.
+message CrdtKeyVersion {
+  string key = 1;
+  uint64 version = 2; // highest Lamport timestamp the receiver holds for this key
+  string replica_id = 3; // ReplicaId UUID text; tie-breaks equal versions (matches LWW order)
+}
+
+// Acknowledgement for a received CrdtBatch: the receiver's current version for
+// each key in that batch. Advances the sender's per-key send watermark; keys
+// the ack omits stay un-acked and are resent next round.
+message CrdtAck {
+  repeated CrdtKeyVersion entries = 1;
+}
+
+// Incremental state update (steady-state)
+message IncrementalUpdate {
+  StoreType store = 1;
+  repeated StateUpdate updates = 2;
+  uint64 version = 3;
+}
+
+message StateUpdate {
+  string key = 1;
+  bytes value = 2;      // Serialized state value
+  uint64 version = 3;
+  string actor = 4;
+  uint64 timestamp = 5;
+}
+
+// Snapshot request (on gap or new join)
+message SnapshotRequest {
+  StoreType store = 1;
+  uint64 from_version = 2; // Request snapshot from this version
+}
+
+// Snapshot chunk (per-store chunking)
+message SnapshotChunk {
+  StoreType store = 1;
+  uint64 chunk_index = 2;
+  uint64 total_chunks = 3;
+  repeated StateUpdate entries = 4;
+  bytes checksum = 5; // For integrity verification
+}
+
+message StreamAck {
+  uint64 sequence = 1;
+  bool success = 2;
+  string error_message = 3;
+}
+
+// One stream value for a single key. Values that fit in a single gRPC
+// message use total_chunks = 1 and chunk_index = 0. Values exceeding
+// max_message_size are split into N chunks with chunk_index in
+// [0, total_chunks). The receiver reassembles via ChunkAssembler.
+// Tree repair pages MUST stay bounded and always use total_chunks = 1.
+message StreamEntry {
+  string key = 1;
+  uint64 generation = 2;
+  uint32 chunk_index = 3;
+  uint32 total_chunks = 4;
+  bytes data = 5;
+}
+
+// One or more stream entries delivered in a single gossip round.
+message StreamBatch {
+  repeated StreamEntry entries = 1;
+}
+
+enum StoreType {
+  MEMBERSHIP = 0;
+  APP = 1;
+  WORKER = 2;
+  POLICY = 3;
+  RATE_LIMIT = 4;
+}

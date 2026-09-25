@@ -1,0 +1,398 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="964.8pt" height="612pt" viewBox="0 0 964.8 612" xmlns="http://www.w3.org/2000/svg" version="1.1" role="img" aria-labelledby="architecture-title architecture-description">
+ <title id="architecture-title">RL360 agentic reinforcement learning architecture</title>
+ <desc id="architecture-description">Miles sends tasks to RL360 and Harbor agents and collects trajectories and rewards. Agents use task sandboxes for tools and verification, and call SGLang inference engines through Miles session tracing and the SMG gateway. Megatron-LM trains on collected batches and synchronizes updated policy weights to SGLang. Task-specific reward functions and retrieval utilities live in the RL360 source packages.</desc>
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>RL360</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 612 
+L 964.8 612 
+L 964.8 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="miles">
+    <path d="M 36 68.4 
+L 226.8 68.4 
+L 226.8 180 
+L 36 180 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #f6f9fc; stroke: #4a719a; stroke-width: 2.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="rl360-and-harbor">
+    <path d="M 396 68.4 
+L 612 68.4 
+L 612 180 
+L 396 180 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #faf8fd; stroke: #8970ad; stroke-width: 2.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="task-sandboxes">
+    <path d="M 741.6 68.4 
+L 928.8 68.4 
+L 928.8 180 
+L 741.6 180 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #faf8fd; stroke: #8970ad; stroke-width: 2.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_2">
+    <path d="M 231.800922 98.64 
+Q 311.401245 98.64 388.206484 98.64 
+" clip-path="url(#p6d9ad58e18)" style="fill: none; stroke: #253245; stroke-width: 2.5; stroke-linejoin: miter"/>
+    <path d="M 381.006484 95.04 
+L 388.206484 98.64 
+L 381.006484 102.24 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #253245; stroke: #253245; stroke-width: 2.5; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 390.999078 146.88 
+Q 311.398755 146.88 234.593516 146.88 
+" clip-path="url(#p6d9ad58e18)" style="fill: none; stroke: #253245; stroke-width: 2.5; stroke-linejoin: miter"/>
+    <path d="M 241.793516 150.48 
+L 234.593516 146.88 
+L 241.793516 143.28 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #253245; stroke: #253245; stroke-width: 2.5; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 617.003174 98.64 
+Q 676.801513 98.64 733.804768 98.64 
+" clip-path="url(#p6d9ad58e18)" style="fill: none; stroke: #253245; stroke-width: 2.5; stroke-linejoin: miter"/>
+    <path d="M 726.604768 95.04 
+L 733.804768 98.64 
+L 726.604768 102.24 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #253245; stroke: #253245; stroke-width: 2.5; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 736.596826 146.88 
+Q 676.798487 146.88 619.795232 146.88 
+" clip-path="url(#p6d9ad58e18)" style="fill: none; stroke: #253245; stroke-width: 2.5; stroke-linejoin: miter"/>
+    <path d="M 626.995232 150.48 
+L 619.795232 146.88 
+L 626.995232 143.28 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #253245; stroke: #253245; stroke-width: 2.5; stroke-linejoin: miter"/>
+   </g>
+   <g id="miles-sessions">
+    <path d="M 396 270 
+L 612 270 
+L 612 349.2 
+L 396 349.2 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #f6f9fc; stroke: #4a719a; stroke-width: 2.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="smg">
+    <path d="M 716.4 270 
+L 928.8 270 
+L 928.8 349.2 
+L 716.4 349.2 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #f8fbf5; stroke: #79a968; stroke-width: 2.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 504 187.796611 
+Q 504 225.001494 504 262.206378 
+" clip-path="url(#p6d9ad58e18)" style="fill: none; stroke: #253245; stroke-width: 2.5; stroke-linejoin: miter"/>
+    <path d="M 500.4 194.996611 
+L 504 187.796611 
+L 507.6 194.996611 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #253245; stroke: #253245; stroke-width: 2.5; stroke-linejoin: miter"/>
+    <path d="M 507.6 255.006378 
+L 504 262.206378 
+L 500.4 255.006378 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #253245; stroke: #253245; stroke-width: 2.5; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_7">
+    <path d="M 619.793974 309.6 
+Q 664.198339 309.6 708.602705 309.6 
+" clip-path="url(#p6d9ad58e18)" style="fill: none; stroke: #253245; stroke-width: 2.5; stroke-linejoin: miter"/>
+    <path d="M 626.993974 313.2 
+L 619.793974 309.6 
+L 626.993974 306 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #253245; stroke: #253245; stroke-width: 2.5; stroke-linejoin: miter"/>
+    <path d="M 701.402705 306 
+L 708.602705 309.6 
+L 701.402705 313.2 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #253245; stroke: #253245; stroke-width: 2.5; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_8">
+    <path d="M 129.6 185.001636 
+Q 129.6 302.399869 129.6 417.003017 
+" clip-path="url(#p6d9ad58e18)" style="fill: none; stroke: #253245; stroke-width: 2.5; stroke-linejoin: miter"/>
+    <path d="M 133.2 409.803017 
+L 129.6 417.003017 
+L 126 409.803017 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #253245; stroke: #253245; stroke-width: 2.5; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_9">
+    <path d="M 36 424.8 
+L 302.4 424.8 
+L 302.4 576 
+L 36 576 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #fff9f8; stroke: #dd796f; stroke-width: 3; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_10">
+    <path d="M 56.88 508.32 
+L 98.64 508.32 
+L 98.64 552.24 
+L 56.88 552.24 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #dd796f"/>
+   </g>
+   <g id="patch_11">
+    <path d="M 119.52 508.32 
+L 161.28 508.32 
+L 161.28 552.24 
+L 119.52 552.24 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #dd796f"/>
+   </g>
+   <g id="patch_12">
+    <path d="M 182.16 508.32 
+L 223.92 508.32 
+L 223.92 552.24 
+L 182.16 552.24 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #dd796f"/>
+   </g>
+   <g id="patch_13">
+    <path d="M 244.8 508.32 
+L 286.56 508.32 
+L 286.56 552.24 
+L 244.8 552.24 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #dd796f"/>
+   </g>
+   <g id="patch_14">
+    <path d="M 669.6 424.8 
+L 928.8 424.8 
+L 928.8 576 
+L 669.6 576 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #f8fbf5; stroke: #79a968; stroke-width: 3; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_15">
+    <path d="M 683.28 494.64 
+L 792 494.64 
+L 792 560.88 
+L 683.28 560.88 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #ffffff; stroke: #79a968; stroke-width: 1.7; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_16">
+    <path d="M 694.8 522 
+L 731.52 522 
+L 731.52 548.64 
+L 694.8 548.64 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #a1c78f"/>
+   </g>
+   <g id="patch_17">
+    <path d="M 743.76 522 
+L 780.48 522 
+L 780.48 548.64 
+L 743.76 548.64 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #a1c78f"/>
+   </g>
+   <g id="patch_18">
+    <path d="M 805.68 494.64 
+L 914.4 494.64 
+L 914.4 560.88 
+L 805.68 560.88 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #ffffff; stroke: #79a968; stroke-width: 1.7; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_19">
+    <path d="M 817.2 522 
+L 853.92 522 
+L 853.92 548.64 
+L 817.2 548.64 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #a1c78f"/>
+   </g>
+   <g id="patch_20">
+    <path d="M 866.16 522 
+L 902.88 522 
+L 902.88 548.64 
+L 866.16 548.64 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #a1c78f"/>
+   </g>
+   <g id="patch_21">
+    <path d="M 822.24 356.992326 
+Q 822.24 386.997101 822.24 417.001875 
+" clip-path="url(#p6d9ad58e18)" style="fill: none; stroke: #79a968; stroke-width: 2.5; stroke-linejoin: miter"/>
+    <path d="M 818.64 364.192326 
+L 822.24 356.992326 
+L 825.84 364.192326 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #79a968; stroke: #79a968; stroke-width: 2.5; stroke-linejoin: miter"/>
+    <path d="M 825.84 409.801875 
+L 822.24 417.001875 
+L 818.64 409.801875 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #79a968; stroke: #79a968; stroke-width: 2.5; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_22">
+    <path d="M 307.400702 511.2 
+Q 486.000891 511.2 661.805994 511.2 
+" clip-path="url(#p6d9ad58e18)" style="fill: none; stroke: #dd796f; stroke-width: 2.5; stroke-linejoin: miter"/>
+    <path d="M 654.605994 507.6 
+L 661.805994 511.2 
+L 654.605994 514.8 
+z
+" clip-path="url(#p6d9ad58e18)" style="fill: #dd796f; stroke: #dd796f; stroke-width: 2.5; stroke-linejoin: miter"/>
+   </g>
+   <g id="text_1">
+    <text style="font-weight: 700; font-size: 22px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: start; fill: #253245" x="36" y="31.184688" transform="rotate(-0 36 31.184688)">Agentic RL in RL360</text>
+   </g>
+   <g id="text_2">
+    <text style="font-size: 12.5px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: end; fill: #687488" x="928.8" y="29.369219" transform="rotate(-0 928.8 29.369219)">Miles coordinates training and rollouts on Ray</text>
+   </g>
+   <g id="text_3">
+    <text style="font-weight: 700; font-size: 20px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253245" x="131.4" y="104.87875" transform="rotate(-0 131.4 104.87875)">Miles</text>
+   </g>
+   <g id="text_4">
+    <text style="font-size: 15px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253245" x="131.4" y="131.579063" transform="rotate(-0 131.4 131.579063)">Rollout manager</text>
+   </g>
+   <g id="text_5">
+    <text style="font-size: 10.8px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #687488" x="131.4" y="157.060125" transform="rotate(-0 131.4 157.060125)">Prompts · trajectories · rewards</text>
+   </g>
+   <g id="text_6">
+    <text style="font-weight: 700; font-size: 20px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253245" x="504" y="104.87875" transform="rotate(-0 504 104.87875)">RL360 + Harbor</text>
+   </g>
+   <g id="text_7">
+    <text style="font-size: 15px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253245" x="504" y="131.579063" transform="rotate(-0 504 131.579063)">Agent execution</text>
+   </g>
+   <g id="text_8">
+    <text style="font-size: 10.8px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #687488" x="504" y="157.060125" transform="rotate(-0 504 157.060125)">src/agent360 + components/harbor</text>
+   </g>
+   <g id="text_9">
+    <text style="font-weight: 700; font-size: 20px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253245" x="835.2" y="104.87875" transform="rotate(-0 835.2 104.87875)">Task sandboxes</text>
+   </g>
+   <g id="text_10">
+    <text style="font-size: 15px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253245" x="835.2" y="131.579063" transform="rotate(-0 835.2 131.579063)">Tools + verifier</text>
+   </g>
+   <g id="text_11">
+    <text style="font-size: 10.8px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #687488" x="835.2" y="157.060125" transform="rotate(-0 835.2 157.060125)">User-configured backend</text>
+   </g>
+   <g id="text_12">
+    <text style="font-size: 13.5px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253245" x="311.04" y="87.245156" transform="rotate(-0 311.04 87.245156)">Task prompts</text>
+   </g>
+   <g id="text_13">
+    <text style="font-size: 12.5px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253245" x="311.04" y="169.049219" transform="rotate(-0 311.04 169.049219)">Trajectories + rewards</text>
+   </g>
+   <g id="text_14">
+    <text style="font-size: 12.5px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253245" x="676.8" y="86.249219" transform="rotate(-0 676.8 86.249219)">Tool calls</text>
+   </g>
+   <g id="text_15">
+    <text style="font-size: 10.3px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253245" x="676.8" y="168.442156" transform="rotate(-0 676.8 168.442156)">Observations + reward</text>
+   </g>
+   <g id="text_16">
+    <text style="font-weight: 700; font-size: 20px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253245" x="504" y="306.47875" transform="rotate(-0 504 306.47875)">Miles sessions</text>
+   </g>
+   <g id="text_17">
+    <text style="font-size: 15px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253245" x="504" y="333.179063" transform="rotate(-0 504 333.179063)">Tokens + logprobs</text>
+   </g>
+   <g id="text_18">
+    <text style="font-weight: 700; font-size: 20px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253245" x="822.6" y="306.47875" transform="rotate(-0 822.6 306.47875)">SMG</text>
+   </g>
+   <g id="text_19">
+    <text style="font-size: 15px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253245" x="822.6" y="333.179063" transform="rotate(-0 822.6 333.179063)">Model gateway</text>
+   </g>
+   <g id="text_20">
+    <text style="font-size: 13px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: start; fill: #253245" x="521.28" y="228.227188" transform="rotate(-0 521.28 228.227188)">LLM calls</text>
+   </g>
+   <g id="text_21">
+    <text style="font-size: 12.5px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253245" x="663.84" y="297.929219" transform="rotate(-0 663.84 297.929219)">Requests</text>
+   </g>
+   <g id="text_22">
+    <text style="font-size: 14px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: start; fill: #253245" x="148.32" y="307.703125" transform="rotate(-0 148.32 307.703125)">Training batches</text>
+   </g>
+   <g id="text_23">
+    <text style="font-weight: 700; font-size: 20px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253245" x="169.2" y="457.5225" transform="rotate(-0 169.2 457.5225)">Megatron-LM</text>
+   </g>
+   <g id="text_24">
+    <text style="font-size: 14px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253245" x="169.2" y="481.943125" transform="rotate(-0 169.2 481.943125)">Policy optimization</text>
+   </g>
+   <g id="text_25">
+    <text style="font-weight: 700; font-size: 13px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #ffffff" x="77.76" y="534.227188" transform="rotate(-0 77.76 534.227188)">GPU</text>
+   </g>
+   <g id="text_26">
+    <text style="font-weight: 700; font-size: 13px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #ffffff" x="140.4" y="534.227188" transform="rotate(-0 140.4 534.227188)">GPU</text>
+   </g>
+   <g id="text_27">
+    <text style="font-weight: 700; font-size: 13px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #ffffff" x="203.04" y="534.227188" transform="rotate(-0 203.04 534.227188)">GPU</text>
+   </g>
+   <g id="text_28">
+    <text style="font-weight: 700; font-size: 13px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #ffffff" x="265.68" y="534.227188" transform="rotate(-0 265.68 534.227188)">GPU</text>
+   </g>
+   <g id="text_29">
+    <text style="font-weight: 700; font-size: 20px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253245" x="799.2" y="457.5225" transform="rotate(-0 799.2 457.5225)">SGLang</text>
+   </g>
+   <g id="text_30">
+    <text style="font-size: 14px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253245" x="799.2" y="479.063125" transform="rotate(-0 799.2 479.063125)">Inference engines</text>
+   </g>
+   <g id="text_31">
+    <text style="font-size: 11px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #526c46" x="737.64" y="510.635313" transform="rotate(-0 737.64 510.635313)">Engine 1</text>
+   </g>
+   <g id="text_32">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253c20" x="713.16" y="538.577344" transform="rotate(-0 713.16 538.577344)">GPU</text>
+   </g>
+   <g id="text_33">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253c20" x="762.12" y="538.577344" transform="rotate(-0 762.12 538.577344)">GPU</text>
+   </g>
+   <g id="text_34">
+    <text style="font-size: 11px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #526c46" x="860.04" y="510.635313" transform="rotate(-0 860.04 510.635313)">Engine N</text>
+   </g>
+   <g id="text_35">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253c20" x="835.56" y="538.577344" transform="rotate(-0 835.56 538.577344)">GPU</text>
+   </g>
+   <g id="text_36">
+    <text style="font-weight: 700; font-size: 10.5px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #253c20" x="884.52" y="538.577344" transform="rotate(-0 884.52 538.577344)">GPU</text>
+   </g>
+   <g id="text_37">
+    <text style="font-size: 12.5px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: start; fill: #253245" x="838.8" y="390.089219" transform="rotate(-0 838.8 390.089219)">Route</text>
+   </g>
+   <g id="text_38">
+    <text style="font-size: 15px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: middle; fill: #a44e47" x="486" y="496.619063" transform="rotate(-0 486 496.619063)">Synchronize policy weights</text>
+   </g>
+   <g id="text_39">
+    <text style="font-size: 11.5px; font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif; text-anchor: start; fill: #687488" x="36" y="600.053281" transform="rotate(-0 36 600.053281)">Task-specific rewards: src/miles360/reward  ·  Retrieval tools: src/agent360/search</text>
+   </g>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="p6d9ad58e18">
+   <rect x="0" y="0" width="964.8" height="612"/>
+  </clipPath>
+ </defs>
+</svg>

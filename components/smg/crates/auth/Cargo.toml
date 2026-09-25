@@ -1,0 +1,42 @@
+[package]
+name = "smg-auth"
+version = "1.2.2"
+edition = "2021"
+description = "Authentication and authorization for control plane APIs"
+license = "Apache-2.0"
+repository = "https://github.com/lightseekorg/smg"
+authors = [
+    "Simo Lin <linsimo.mark@gmail.com>",
+    "Chang Su <mckvtl@gmail.com>",
+    "Keyang Ru <rukeyang@gmail.com>",
+]
+keywords = ["auth", "jwt", "oidc", "api-key", "middleware"]
+categories = ["authentication", "web-programming"]
+
+[lib]
+name = "smg_auth"
+
+[dependencies]
+axum = { workspace = true, features = ["macros"] }
+chrono = { workspace = true, features = ["serde"] }
+http.workspace = true
+lru.workspace = true
+parking_lot.workspace = true
+reqwest = { workspace = true, features = ["rustls", "json"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+# Only used by auth
+# jsonwebtoken 10 decouples crypto behind a provider trait; `rust_crypto` selects the
+# RustCrypto backend (matches the workspace's pure-Rust stack, no aws-lc-sys C build).
+jsonwebtoken = { version = "10.4", default-features = false, features = ["use_pem", "rust_crypto"] }
+sha2 = "0.11"
+url = "2.5"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+
+[lints]
+workspace = true

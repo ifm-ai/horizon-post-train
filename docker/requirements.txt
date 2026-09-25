@@ -1,0 +1,30 @@
+# Agent training dependencies; use together with constraints.txt and overrides.txt.
+accelerate
+blobfile
+datasets
+httpx[http2]
+mcp[cli]
+memray
+omegaconf
+pillow
+pybase64
+pylatexenc
+pytest-asyncio
+pyyaml
+qwen_vl_utils
+ray[default]
+ring_flash_attn
+tensorboard
+wandb
+transformers @ git+https://github.com/huggingface/transformers.git@76732b4e7120808ff989edbd16401f61fa6a0afa
+litellm
+mini-swe-agent
+modal
+fastapi
+uvicorn
+jinja2
+boto3
+dockerfile_parse
+e2b
+kubernetes
+runloop-api-client

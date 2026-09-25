@@ -1,0 +1,44 @@
+# Modified for the RL360 source snapshot: omit excluded documentation and development targets.
+# Cap grpcio-tools at 1.81.x so the bundled protoc emits protobuf-6 gencode.
+# 1.82.x emits protobuf-7 gencode, which the protobuf 6.x runtime (pinned via
+# grpcio-health-checking/reflection in ci_install_e2e_deps.sh) refuses to load.
+# Drop the cap once the whole stack moves to protobuf 7.
+[build-system]
+requires = ["setuptools>=77.0", "grpcio-tools>=1.81.1,<1.82"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smg-grpc-proto"
+version = "0.4.14"
+description = "SMG gRPC proto definitions for vLLM, TRT-LLM, MLX, TokenSpeed, and SGLang"
+requires-python = ">=3.10"
+dependencies = [
+    "grpcio>=1.81.1",
+    "protobuf>=5.26.0",
+]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [
+    {name = "Chang Su", email = "mckvtl@gmail.com"},
+    {name = "Simo Lin", email = "linsimo.mark@gmail.com"},
+    {name = "Keyang Ru", email = "rukeyang@gmail.com"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/lightseekorg/smg"
+Repository = "https://github.com/lightseekorg/smg"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["smg_grpc_proto*"]
+
+[tool.setuptools.package-data]
+smg_grpc_proto = ["proto/*.proto", "generated/*.py", "generated/*.pyi"]

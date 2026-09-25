@@ -1,0 +1,61 @@
+# Modified for the RL360 source snapshot: omit excluded documentation and development targets.
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "smg"
+version = "1.9.0"
+description = "High-performance Rust-based inference gateway for large-scale LLM deployments"
+authors = [
+    {name = "Simo Lin", email = "linsimo.mark@gmail.com"},
+    {name = "Chang Su", email = "mckvtl@gmail.com"},
+    {name = "Keyang Ru", email = "rukeyang@gmail.com"}
+]
+requires-python = ">=3.9"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+classifiers = [
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+
+dependencies = [
+    "setproctitle",
+    "grpcio",
+    "grpcio-health-checking",
+    "PyYAML",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mypy",
+    "requests>=2.25.0",
+    "ruff",
+    "pytest>=7.0.0",
+]
+
+[project.scripts]
+smg = "smg.cli:main"
+
+[tool.maturin]
+python-source = "src"
+module-name = "smg.smg_rs"
+# Exclude bindings/python/README.md to use root README only
+exclude = ["README.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "unit: mark test as a unit test (no GPU required)",
+]

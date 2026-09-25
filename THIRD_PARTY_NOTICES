@@ -1,0 +1,9 @@
+RL360 bundles source from Harbor, Megatron-LM, Miles, SGLang, and SMG.
+Each component retains its license and copyright notices under components/.
+Component-specific license terms continue to apply to the bundled code.
+
+Snapshot modifications: optional repository content has been omitted;
+packaging metadata has been adjusted for the selected files; SGLang version
+metadata is fixed independently of Git; private infrastructure references
+have been removed or replaced with configurable defaults. Miles includes
+the infrastructure-failure filters used by the coding overfit recipe.

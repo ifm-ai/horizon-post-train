@@ -1,0 +1,424 @@
+//! Harmony Request Building Stage: Build gRPC request from Harmony-encoded tokens
+
+use async_trait::async_trait;
+use axum::response::Response;
+use smg_grpc_client::SglangGenerateRequestOptions;
+use tracing::{debug, error};
+
+use crate::routers::{
+    error,
+    grpc::{
+        client::GrpcClient,
+        common::stages::{helpers, PipelineStage},
+        context::{
+            ClientSelection, ExecutionPlan, ExecutionPlanKind, PreparationOutput, RequestContext,
+            RequestType,
+        },
+        proto_wrapper::ProtoGenerateRequest,
+    },
+};
+
+/// Harmony Request Building stage: Convert Harmony tokens to gRPC request
+///
+/// Takes the Harmony-encoded input_ids from preparation and builds a proto::GenerateRequest.
+/// Unlike regular request building, this uses token_ids directly (Harmony encoding handles messages).
+pub(crate) struct HarmonyRequestBuildingStage {
+    inject_pd_metadata: bool,
+    plan_kind: ExecutionPlanKind,
+}
+
+impl HarmonyRequestBuildingStage {
+    /// Create a new Harmony request building stage
+    pub fn new(inject_pd_metadata: bool, plan_kind: ExecutionPlanKind) -> Self {
+        Self {
+            inject_pd_metadata,
+            plan_kind,
+        }
+    }
+}
+
+#[async_trait]
+impl PipelineStage for HarmonyRequestBuildingStage {
+    async fn execute(&self, ctx: &mut RequestContext) -> Result<Option<Response>, Response> {
+        // Take preparation output (last consumer — worker_selection already ran)
+        let prep = ctx.state.preparation.take().ok_or_else(|| {
+            error!(
+                function = "HarmonyRequestBuildingStage::execute",
+                "Preparation stage not completed"
+            );
+            error::internal_error("preparation_not_completed", "Preparation not completed")
+        })?;
+        let PreparationOutput::Harmony {
+            token_ids,
+            tool_constraints,
+            modified_request,
+            harmony_stop_ids,
+            ..
+        } = prep
+        else {
+            debug_assert!(false, "pipeline guarantees Harmony variant");
+            return Err(error::internal_error(
+                "wrong_preparation_type",
+                "Expected Harmony preparation output",
+            ));
+        };
+
+        // Get clients
+        let clients = ctx.state.clients.as_ref().ok_or_else(|| {
+            error!(
+                function = "HarmonyRequestBuildingStage::execute",
+                "Client acquisition stage not completed"
+            );
+            error::internal_error(
+                "client_acquisition_not_completed",
+                "Client acquisition not completed",
+            )
+        })?;
+        let builder_client = match clients {
+            ClientSelection::Single { client } => client,
+            ClientSelection::Disaggregated { prefill, .. } => prefill,
+        };
+
+        // Generate request_id based on request type
+        let disaggregated = matches!(clients, ClientSelection::Disaggregated { .. });
+        let request_id = match &ctx.input.request_type {
+            RequestType::Chat(_) => helpers::resolve_request_id(
+                &ctx.input.request_type,
+                ctx.input.tenant_request_meta.as_ref(),
+                "chatcmpl-",
+                disaggregated,
+            ),
+            RequestType::Responses(_) => helpers::resolve_request_id(
+                &ctx.input.request_type,
+                ctx.input.tenant_request_meta.as_ref(),
+                "responses-",
+                disaggregated,
+            ),
+            request_type @ (RequestType::Generate(_)
+            | RequestType::Completion(_)
+            | RequestType::Embedding(_)
+            | RequestType::Classify(_)
+            | RequestType::Messages(_)) => {
+                error!(
+                    function = "HarmonyRequestBuildingStage::execute",
+                    request_type = %request_type,
+                    "{request_type} request type not supported for Harmony models"
+                );
+                return Err(error::bad_request(
+                    "not_supported_in_harmony",
+                    format!("{request_type} requests are not supported with Harmony models"),
+                ));
+            }
+        };
+
+        // Build gRPC request using token_ids directly (Harmony encoding already handled message rendering)
+        let placeholder_processed_text = "[harmony]".to_string();
+
+        // Build proto request based on backend type and request type
+        let mut proto_request = match builder_client {
+            GrpcClient::Sglang(sglang_client) => {
+                let req = match &ctx.input.request_type {
+                    RequestType::Chat(request) => {
+                        let body = modified_request.as_deref().unwrap_or_else(|| request.as_ref());
+                        sglang_client
+                            .build_generate_request_from_chat(
+                                request_id,
+                                body,
+                                placeholder_processed_text,
+                                token_ids,
+                                SglangGenerateRequestOptions {
+                                    multimodal_inputs: None,
+                                    tool_call_constraint: tool_constraints,
+                                    require_reasoning: false,
+                                },
+                            )
+                            .map_err(|e| {
+                                error!(function = "HarmonyRequestBuildingStage::execute", error = %e, "Failed to build SGLang generate request");
+                                error::bad_request("invalid_request_parameters", format!("Invalid request parameters: {e}"))
+                            })?
+                    }
+                    RequestType::Responses(request) => sglang_client
+                        .build_generate_request_from_responses(
+                            request_id,
+                            request.as_ref(),
+                            placeholder_processed_text,
+                            token_ids,
+                            tool_constraints,
+                        )
+                        .map_err(|e| {
+                            error!(function = "HarmonyRequestBuildingStage::execute", error = %e, "Failed to build SGLang generate request from responses");
+                            error::bad_request("invalid_request_parameters", format!("Invalid request parameters: {e}"))
+                        })?,
+                    RequestType::Embedding(_) => {
+                        return Err(error::bad_request(
+                            "harmony_embedding_not_supported",
+                            "Embedding requests are not supported with Harmony models".to_string(),
+                        ));
+                    }
+                    _ => {
+                        return Err(error::bad_request(
+                            "unsupported_request_type",
+                            "Unsupported request type for Harmony models".to_string(),
+                        ));
+                    }
+                };
+                ProtoGenerateRequest::Sglang(Box::new(req))
+            }
+            GrpcClient::Vllm(vllm_client) => {
+                let req = match &ctx.input.request_type {
+                    RequestType::Chat(request) => {
+                        let body = modified_request.as_deref().unwrap_or_else(|| request.as_ref());
+                        vllm_client
+                            .build_generate_request_from_chat(
+                                request_id,
+                                body,
+                                placeholder_processed_text,
+                                token_ids,
+                                None, // No multimodal in Harmony pipeline
+                                tool_constraints,
+                            )
+                            .map_err(|e| {
+                                error!(function = "HarmonyRequestBuildingStage::execute", error = %e, "Failed to build vLLM generate request");
+                                error::bad_request("invalid_request_parameters", format!("Invalid request parameters: {e}"))
+                            })?
+                    }
+                    RequestType::Responses(request) => vllm_client
+                        .build_generate_request_from_responses(
+                            request_id,
+                            request.as_ref(),
+                            placeholder_processed_text,
+                            token_ids,
+                            tool_constraints,
+                        )
+                        .map_err(|e| {
+                            error!(function = "HarmonyRequestBuildingStage::execute", error = %e, "Failed to build vLLM generate request from responses");
+                            error::bad_request("invalid_request_parameters", format!("Invalid request parameters: {e}"))
+                        })?,
+                    RequestType::Embedding(_) => {
+                        return Err(error::bad_request(
+                            "harmony_embedding_not_supported",
+                            "Embedding requests are not supported with Harmony models".to_string(),
+                        ));
+                    }
+                    _ => {
+                        return Err(error::bad_request(
+                            "unsupported_request_type",
+                            "Unsupported request type for Harmony models".to_string(),
+                        ));
+                    }
+                };
+                ProtoGenerateRequest::Vllm(Box::new(req))
+            }
+            GrpcClient::Trtllm(trtllm_client) => {
+                let req = match &ctx.input.request_type {
+                    RequestType::Chat(request) => {
+                        let body = modified_request.as_deref().unwrap_or_else(|| request.as_ref());
+                        trtllm_client
+                            .build_generate_request_from_chat(
+                                request_id,
+                                body,
+                                placeholder_processed_text,
+                                token_ids,
+                                None, // No multimodal in Harmony pipeline
+                                tool_constraints,
+                            )
+                            .map_err(|e| {
+                                error!(function = "HarmonyRequestBuildingStage::execute", error = %e, "Failed to build TensorRT-LLM generate request");
+                                error::bad_request("invalid_request_parameters", format!("Invalid request parameters: {e}"))
+                            })?
+                    }
+                    RequestType::Responses(request) => trtllm_client
+                        .build_generate_request_from_responses(
+                            request_id,
+                            request.as_ref(),
+                            placeholder_processed_text,
+                            token_ids,
+                            tool_constraints,
+                        )
+                        .map_err(|e| {
+                            error!(function = "HarmonyRequestBuildingStage::execute", error = %e, "Failed to build TensorRT-LLM generate request from responses");
+                            error::bad_request("invalid_request_parameters", format!("Invalid request parameters: {e}"))
+                        })?,
+                    RequestType::Embedding(_) => {
+                        return Err(error::bad_request(
+                            "harmony_embedding_not_supported",
+                            "Embedding requests are not supported with Harmony models".to_string(),
+                        ));
+                    }
+                    _ => {
+                        return Err(error::bad_request(
+                            "unsupported_request_type",
+                            "Unsupported request type for Harmony models".to_string(),
+                        ));
+                    }
+                };
+                ProtoGenerateRequest::Trtllm(Box::new(req))
+            }
+            GrpcClient::Mlx(mlx_client) => {
+                let req = match &ctx.input.request_type {
+                    RequestType::Chat(request) => {
+                        let body = modified_request.as_deref().unwrap_or_else(|| request.as_ref());
+                        mlx_client
+                            .build_generate_request_from_chat(
+                                request_id,
+                                body,
+                                placeholder_processed_text,
+                                token_ids,
+                                tool_constraints,
+                            )
+                            .map_err(|e| {
+                                error!(function = "HarmonyRequestBuildingStage::execute", error = %e, "Failed to build MLX generate request");
+                                error::bad_request("invalid_request_parameters", format!("Invalid request parameters: {e}"))
+                            })?
+                    }
+                    RequestType::Responses(request) => mlx_client
+                        .build_generate_request_from_responses(
+                            request_id,
+                            request.as_ref(),
+                            placeholder_processed_text,
+                            token_ids,
+                            tool_constraints,
+                        )
+                        .map_err(|e| {
+                            error!(function = "HarmonyRequestBuildingStage::execute", error = %e, "Failed to build MLX generate request from responses");
+                            error::bad_request("invalid_request_parameters", format!("Invalid request parameters: {e}"))
+                        })?,
+                    RequestType::Embedding(_) => {
+                        return Err(error::bad_request(
+                            "harmony_embedding_not_supported",
+                            "Embedding requests are not supported with Harmony models".to_string(),
+                        ));
+                    }
+                    _ => {
+                        return Err(error::bad_request(
+                            "unsupported_request_type",
+                            "Unsupported request type for Harmony models".to_string(),
+                        ));
+                    }
+                };
+                ProtoGenerateRequest::Mlx(Box::new(req))
+            }
+            GrpcClient::TokenSpeed(tokenspeed_client) => {
+                let req = match &ctx.input.request_type {
+                    RequestType::Chat(request) => {
+                        let body = modified_request.as_deref().unwrap_or_else(|| request.as_ref());
+                        tokenspeed_client
+                            .build_generate_request_from_chat(
+                                request_id,
+                                body,
+                                placeholder_processed_text,
+                                token_ids,
+                                None, // Harmony path: multimodal not yet wired
+                                tool_constraints,
+                            )
+                            .map_err(|e| {
+                                error!(function = "HarmonyRequestBuildingStage::execute", error = %e, "Failed to build TokenSpeed generate request");
+                                error::bad_request("invalid_request_parameters", format!("Invalid request parameters: {e}"))
+                            })?
+                    }
+                    RequestType::Responses(request) => tokenspeed_client
+                        .build_generate_request_from_responses(
+                            request_id,
+                            request.as_ref(),
+                            placeholder_processed_text,
+                            token_ids,
+                            tool_constraints,
+                        )
+                        .map_err(|e| {
+                            error!(function = "HarmonyRequestBuildingStage::execute", error = %e, "Failed to build TokenSpeed generate request from responses");
+                            error::bad_request("invalid_request_parameters", format!("Invalid request parameters: {e}"))
+                        })?,
+                    RequestType::Embedding(_) => {
+                        return Err(error::bad_request(
+                            "harmony_embedding_not_supported",
+                            "Embedding requests are not supported with Harmony models".to_string(),
+                        ));
+                    }
+                    _ => {
+                        return Err(error::bad_request(
+                            "unsupported_request_type",
+                            "Unsupported request type for Harmony models".to_string(),
+                        ));
+                    }
+                };
+                ProtoGenerateRequest::TokenSpeed(Box::new(req))
+            }
+        };
+
+        // Inject Harmony stop token IDs into sampling params for ALL Harmony requests
+        // These stop tokens (<|return|> and <|call|>) prevent the model from generating
+        // malformed Harmony sequences
+        if !harmony_stop_ids.is_empty() {
+            match &mut proto_request {
+                ProtoGenerateRequest::Sglang(req) => {
+                    if let Some(params) = req.sampling_params.as_mut() {
+                        params.stop_token_ids.extend_from_slice(&harmony_stop_ids);
+                        debug!(
+                            stop_token_count = harmony_stop_ids.len(),
+                            "Injected Harmony stop tokens into SGLang sampling params"
+                        );
+                    }
+                }
+                ProtoGenerateRequest::Vllm(req) => {
+                    if let Some(params) = req.sampling_params.as_mut() {
+                        params.stop_token_ids.extend_from_slice(&harmony_stop_ids);
+                        debug!(
+                            stop_token_count = harmony_stop_ids.len(),
+                            "Injected Harmony stop tokens into vLLM sampling params"
+                        );
+                    }
+                }
+                ProtoGenerateRequest::Trtllm(req) => {
+                    req.stop_token_ids.extend_from_slice(&harmony_stop_ids);
+                    // TRT-LLM strips stop tokens from output by default, but
+                    // the Harmony parser needs them to detect channel boundaries
+                    // (e.g. <|call|> marks the tool-call channel transition).
+                    req.include_stop_token_in_output = true;
+                    debug!(
+                        stop_token_count = harmony_stop_ids.len(),
+                        "Injected Harmony stop tokens into TensorRT-LLM stop_token_ids"
+                    );
+                }
+                ProtoGenerateRequest::Mlx(req) => {
+                    if let Some(ref mut params) = req.sampling_params {
+                        params.stop_token_ids.extend_from_slice(&harmony_stop_ids);
+                        debug!(
+                            stop_token_count = harmony_stop_ids.len(),
+                            "Injected Harmony stop tokens into MLX sampling params"
+                        );
+                    }
+                }
+                ProtoGenerateRequest::TokenSpeed(req) => {
+                    if let Some(params) = req.sampling_params.as_mut() {
+                        params.stop_token_ids.extend_from_slice(&harmony_stop_ids);
+                        debug!(
+                            stop_token_count = harmony_stop_ids.len(),
+                            "Injected Harmony stop tokens into TokenSpeed sampling params"
+                        );
+                    }
+                }
+            }
+        }
+
+        if self.inject_pd_metadata {
+            if let Some(workers) = ctx.state.workers.as_ref() {
+                helpers::maybe_inject_pd_metadata(&mut proto_request, workers);
+            }
+        }
+
+        ctx.state.execution_plan = Some(ExecutionPlan::generate(self.plan_kind, proto_request));
+        Ok(None)
+    }
+
+    fn name(&self) -> &'static str {
+        "HarmonyRequestBuilding"
+    }
+
+    #[cfg(test)]
+    fn signature(&self) -> String {
+        format!(
+            "HarmonyRequestBuildingStage(inject_pd_metadata={}, {:?})",
+            self.inject_pd_metadata, self.plan_kind
+        )
+    }
+}

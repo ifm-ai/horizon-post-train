@@ -1,0 +1,393 @@
+//! Load balancing policies for SGLang router
+//!
+//! This module provides a unified abstraction for routing policies that work
+//! across both regular and prefill-decode (PD) routing modes.
+
+use std::{fmt::Debug, sync::Arc};
+
+use openai_protocol::worker::WorkerLoadResponse;
+
+use crate::worker::{HashRing, KvEventMonitor, Worker};
+
+mod bucket;
+mod cache_aware;
+mod consistent_hashing;
+mod dp_min_token;
+mod factory;
+mod least_load;
+mod manual;
+mod passthrough;
+mod power_of_two;
+mod prefix_hash;
+mod random;
+mod registry;
+mod round_robin;
+mod size_aware_power_of_two;
+pub(crate) mod utils;
+
+pub use bucket::BucketPolicy;
+pub use cache_aware::{CacheAwarePolicy, TreeHandle, TreeKind};
+pub(crate) use cache_aware::{
+    CacheAwareSelection, DistributionProtectionSnapshot, OwnerPressureDispatchPlan,
+    SeedWorkerHeadroom,
+};
+pub use consistent_hashing::ConsistentHashingPolicy;
+pub use dp_min_token::MinimumTokensPolicy;
+pub use factory::PolicyFactory;
+// Re-export PrefixMatchResult from kv_index for production use
+pub use kv_index::PrefixMatchResult;
+pub use least_load::LeastLoadPolicy;
+pub use manual::{ManualConfig, ManualPolicy};
+pub use passthrough::PassthroughPolicy;
+pub use power_of_two::PowerOfTwoPolicy;
+pub use prefix_hash::{PrefixHashConfig, PrefixHashPolicy};
+pub use random::RandomPolicy;
+pub use registry::PolicyRegistry;
+pub use round_robin::RoundRobinPolicy;
+pub use size_aware_power_of_two::{SizeAwarePowerOfTwoPolicy, DEFAULT_OUTPUT_TOKEN_ESTIMATE};
+
+/// Core trait for load balancing policies
+///
+/// This trait provides a unified interface for implementing routing algorithms
+/// that can work with both regular single-worker selection and PD dual-worker selection.
+pub trait LoadBalancingPolicy: Send + Sync + Debug {
+    /// Select a single worker from the available workers
+    ///
+    /// This is used for regular routing mode where requests go to a single worker.
+    /// Now uses Arc<dyn Worker> for better performance and to avoid unnecessary cloning.
+    ///
+    /// # Arguments
+    /// * `workers` - Available workers to select from
+    /// * `info` - Additional information for routing decisions
+    fn select_worker(&self, workers: &[Arc<dyn Worker>], info: &SelectWorkerInfo) -> Option<usize>;
+
+    /// Update policy state after request completion
+    ///
+    /// This is called when a request completes (successfully or not) to allow
+    /// policies to update their internal state.
+    fn on_request_complete(&self, _worker_url: &str, _success: bool) {
+        // Default: no-op for stateless policies
+    }
+
+    /// Return the router-local work reserved by this request, if this policy
+    /// reserves work during selection.
+    fn reservation_cost(&self, _info: &SelectWorkerInfo<'_>) -> Option<u64> {
+        None
+    }
+
+    /// Release router-local work when the selected request finishes or fails.
+    fn release_reservation(&self, _worker_url: &str, _cost: u64) {
+        // Default: no-op for policies without router-local reservations
+    }
+
+    /// Get policy name for metrics and debugging
+    fn name(&self) -> &'static str;
+
+    /// Check if this policy needs request text for routing decisions
+    fn needs_request_text(&self) -> bool {
+        false // Default: most policies don't need request text
+    }
+
+    /// Update worker load information
+    ///
+    /// This is called periodically with current load information for load-aware policies.
+    fn update_loads(&self, _loads: &std::collections::HashMap<String, WorkerLoadResponse>) {
+        // Default: no-op for policies that don't use load information
+    }
+
+    /// Update loads for a complete monitored worker group.
+    ///
+    /// Policies that need to discard missing samples can override this method.
+    fn update_loads_for_workers(
+        &self,
+        loads: &std::collections::HashMap<String, WorkerLoadResponse>,
+        _worker_urls: &[String],
+    ) {
+        self.update_loads(loads);
+    }
+
+    /// Whether the worker monitor should poll engine load for this policy.
+    fn needs_load_updates(&self) -> bool {
+        false
+    }
+
+    /// Whether this policy consumes backend KV ownership events.
+    fn needs_kv_events(&self) -> bool {
+        false
+    }
+
+    /// Inject the shared KV event monitor when the policy needs it.
+    fn set_kv_event_monitor(&self, _monitor: Option<Arc<KvEventMonitor>>) {}
+
+    /// Drop any cached per-worker state for a removed worker.
+    ///
+    /// Called when a worker leaves the registry so load-aware policies don't
+    /// accumulate stale load reports under worker churn (autoscaling, rolling
+    /// updates). Default is a no-op for stateless policies.
+    fn remove_worker(&self, _url: &str) {
+        // Default: no-op for policies that don't cache per-worker state
+    }
+
+    /// Reset any internal state
+    ///
+    /// This is useful for policies that maintain state (e.g., round-robin counters).
+    fn reset(&self) {
+        // Default: no-op for stateless policies
+    }
+
+    /// Get as Any for downcasting
+    fn as_any(&self) -> &dyn std::any::Any;
+}
+
+pub trait DPRankLoadPolicy: Send + Sync + Debug {
+    fn select_dp_rank(&self, worker: &dyn Worker, estimated_cost: isize) -> Option<isize>;
+}
+
+/// Configuration for cache-aware policy
+#[derive(Debug, Clone)]
+pub struct CacheAwareConfig {
+    pub cache_threshold: f32,
+    pub balance_abs_threshold: usize,
+    pub balance_rel_threshold: f32,
+    pub eviction_interval_secs: u64,
+    pub max_tree_size: usize,
+    /// Output-token estimate used by the size-aware P2C fallback and cached
+    /// owner reservations.
+    pub fallback_output_token_estimate: u64,
+    /// Backend KV cache block size (tokens per block) for event-driven routing.
+    /// Used by `compute_request_content_hashes` to chunk request tokens into blocks.
+    /// Must match the backend's block size. Default: 16 (SGLang page size).
+    pub block_size: usize,
+    /// Use engine-reported KV and utilization pressure to bound cache affinity.
+    pub engine_load: bool,
+    /// KV-usage **spread** (hottest minus coldest backend, 0.0–1.0) above which
+    /// the pool is treated as imbalanced and cache affinity is abandoned for
+    /// size-aware P2C. This is the balance signal for long-context workloads
+    /// where a few requests saturate one engine's KV without tripping the
+    /// request-count thresholds; being backend-reported, it is invariant to the
+    /// number of gateway replicas. Requires the backend to report `token_usage`
+    /// (gRPC/`GetLoads`); falls back to the count spread when unavailable.
+    /// `>= 1.0` disables it (default).
+    pub balance_token_usage_threshold: f32,
+    /// Backend KV-cache utilization **ceiling** (0.0–1.0): when the hottest
+    /// engine exceeds it the pool is treated as imbalanced regardless of spread,
+    /// shedding load off a critically-saturated engine. A safety valve, best set
+    /// high (e.g. 0.9). Requires `token_usage`; `>= 1.0` disables it (default).
+    pub overload_token_usage_threshold: f32,
+    /// Maximum number of healthy workers intentionally allowed to own one
+    /// prefix. Existing owners remain sticky below this ceiling; a new owner is
+    /// created only when every matching owner is pressured. Authoritative event
+    /// state is never pruned to enforce the ceiling. `0` disables the
+    /// replication budget for backward compatibility.
+    pub max_cached_owners_per_prefix: usize,
+    /// Minimum interval between pressure-driven owner additions for one prefix.
+    /// Concurrent requests join the same provisional owner while the cooldown
+    /// is active. `0` disables the cooldown.
+    pub cache_owner_spill_cooldown_secs: u64,
+}
+
+impl Default for CacheAwareConfig {
+    fn default() -> Self {
+        Self {
+            cache_threshold: 0.5,
+            balance_abs_threshold: 32,
+            balance_rel_threshold: 1.1,
+            eviction_interval_secs: 30,
+            max_tree_size: 10000,
+            fallback_output_token_estimate: DEFAULT_OUTPUT_TOKEN_ESTIMATE,
+            block_size: 16,
+            engine_load: false,
+            // Both KV triggers disabled by default (>= 1.0 never trips). Set
+            // balance e.g. 0.5 (spread) and/or overload e.g. 0.9 (ceiling).
+            balance_token_usage_threshold: 1.0,
+            overload_token_usage_threshold: 1.0,
+            max_cached_owners_per_prefix: 0,
+            cache_owner_spill_cooldown_secs: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct BucketConfig {
+    pub balance_abs_threshold: usize,
+    pub balance_rel_threshold: f32,
+    pub bucket_adjust_interval_secs: usize,
+}
+
+impl Default for BucketConfig {
+    fn default() -> Self {
+        Self {
+            balance_abs_threshold: 32,
+            balance_rel_threshold: 1.0001,
+            bucket_adjust_interval_secs: 5,
+        }
+    }
+}
+
+/// Helper function to filter healthy workers and return their indices
+pub(crate) fn get_healthy_worker_indices(workers: &[Arc<dyn Worker>]) -> Vec<usize> {
+    workers
+        .iter()
+        .enumerate()
+        .filter(|(_, w)| w.is_healthy() && w.circuit_breaker_can_execute())
+        .map(|(idx, _)| idx)
+        .collect()
+}
+
+/// Helper function to normalize model_id to a key for policy lookups.
+///
+/// Returns UNKNOWN_MODEL_ID for empty model_ids to ensure consistent behavior
+/// across single-model and multi-model deployments.
+#[inline]
+pub(crate) fn normalize_model_key(model_id: &str) -> &str {
+    if model_id.is_empty() {
+        crate::worker::UNKNOWN_MODEL_ID
+    } else {
+        model_id
+    }
+}
+
+/// Which PD leg a selection is for. `Single` is non-PD (the default) and keeps
+/// routing-key stickiness byte-identical to pre-leg behavior.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum WorkerLeg {
+    #[default]
+    Single,
+    Prefill,
+    Decode,
+}
+
+impl WorkerLeg {
+    /// Prefix used to namespace sticky routing IDs per leg. `Single` is empty so
+    /// non-PD entries are unchanged.
+    pub fn routing_id_prefix(self) -> &'static str {
+        match self {
+            WorkerLeg::Single => "",
+            WorkerLeg::Prefill => "prefill:",
+            WorkerLeg::Decode => "decode:",
+        }
+    }
+}
+
+/// Information passed to policy for worker selection
+#[derive(Debug, Clone, Default)]
+pub struct SelectWorkerInfo<'a> {
+    /// Request text for cache-aware routing
+    pub request_text: Option<&'a str>,
+    /// Tokenized request for prefix-hash routing
+    /// Used by PrefixHashPolicy for token-based prefix hashing
+    pub tokens: Option<&'a [u32]>,
+    /// HTTP headers for header-based routing policies
+    /// Policies can extract routing information from headers like:
+    /// - X-SMG-Target-Worker: Direct routing to a specific worker by index
+    /// - X-SMG-Routing-Key: Consistent hash routing for session affinity
+    pub headers: Option<&'a http::HeaderMap>,
+    /// Pre-computed hash ring for O(log n) consistent hashing
+    /// Built and cached by WorkerRegistry, passed through to avoid per-request rebuilds
+    pub hash_ring: Option<Arc<HashRing>>,
+    /// Caller-declared output-token ceiling, when the endpoint exposes one.
+    pub max_output_tokens: Option<u64>,
+    /// Whether this request path attaches a completion guard that can release
+    /// router-local work reserved during selection.
+    pub reserve_work: bool,
+    /// Which PD leg this selection is for (default `Single`); namespaces
+    /// header-based sticky routing so prefill and decode stick independently.
+    pub leg: WorkerLeg,
+}
+
+#[cfg(test)]
+mod tests {
+    use openai_protocol::worker::{HealthCheckConfig, WorkerStatus};
+
+    use super::*;
+    use crate::worker::{BasicWorkerBuilder, WorkerType};
+
+    fn no_health_check() -> HealthCheckConfig {
+        HealthCheckConfig {
+            disable_health_check: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_get_healthy_worker_indices() {
+        let workers: Vec<Arc<dyn Worker>> = vec![
+            Arc::new(
+                BasicWorkerBuilder::new("http://w1:8000")
+                    .worker_type(WorkerType::Regular)
+                    .api_key("test_api_key")
+                    .health_config(no_health_check())
+                    .build(),
+            ),
+            Arc::new(
+                BasicWorkerBuilder::new("http://w2:8000")
+                    .worker_type(WorkerType::Regular)
+                    .api_key("test_api_key2")
+                    .health_config(no_health_check())
+                    .build(),
+            ),
+            Arc::new(
+                BasicWorkerBuilder::new("http://w3:8000")
+                    .worker_type(WorkerType::Regular)
+                    .api_key("test_api_key")
+                    .health_config(no_health_check())
+                    .build(),
+            ),
+        ];
+
+        // All healthy initially
+        let indices = get_healthy_worker_indices(&workers);
+        assert_eq!(indices, vec![0, 1, 2]);
+
+        // Mark one unhealthy
+        workers[1].set_status(WorkerStatus::NotReady);
+        let indices = get_healthy_worker_indices(&workers);
+        assert_eq!(indices, vec![0, 2]);
+    }
+
+    /// Only `Ready` workers may be selected. Pending, NotReady, Failed, and
+    /// Draining are all excluded. Draining specifically guards against
+    /// routing new traffic to a worker that is being torn down.
+    #[test]
+    fn test_get_healthy_worker_indices_excludes_each_non_ready_status() {
+        let cases = [
+            (WorkerStatus::Pending, false),
+            (WorkerStatus::Ready, true),
+            (WorkerStatus::NotReady, false),
+            (WorkerStatus::Failed, false),
+            (WorkerStatus::Draining, false),
+        ];
+
+        for (status, expected_included) in cases {
+            let worker: Arc<dyn Worker> = Arc::new(
+                BasicWorkerBuilder::new("http://w:8000")
+                    .worker_type(WorkerType::Regular)
+                    .api_key("k")
+                    .health_config(no_health_check())
+                    .build(),
+            );
+            worker.set_status(status);
+            let workers = vec![worker];
+            let indices = get_healthy_worker_indices(&workers);
+            assert_eq!(
+                indices == vec![0],
+                expected_included,
+                "status {status:?} should be {}",
+                if expected_included {
+                    "included"
+                } else {
+                    "excluded"
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn test_select_worker_info_leg_defaults_to_single() {
+        let info = SelectWorkerInfo::default();
+        assert_eq!(info.leg, WorkerLeg::Single);
+        assert_eq!(WorkerLeg::Single.routing_id_prefix(), "");
+        assert_eq!(WorkerLeg::Prefill.routing_id_prefix(), "prefill:");
+        assert_eq!(WorkerLeg::Decode.routing_id_prefix(), "decode:");
+    }
+}

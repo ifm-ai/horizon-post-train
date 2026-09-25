@@ -216,3 +216,25 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# RL360
+__pycache__/
+.agents/
+.codex/
+*.py[cod]
+*.egg-info/
+.venv/
+.env
+.env.*
+outputs/
+wandb/
+slurm-*.log
+.netrc
+.aws/
+.ssh/
+credentials*.json
+credentials*.env
+*.pem
+*.key
+*.p12
+*.pfx
